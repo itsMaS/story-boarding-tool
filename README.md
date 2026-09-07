@@ -13,7 +13,7 @@ Live: https://itsmas.github.io/story-boarding-tool/
 - **Slides**: per-slide or default duration, captions rendered in playback and export, duplicate, and **linked duplicates** that share their drawing so editing one updates all.
 - **Playback**: play, pause, scrub, loop, speed, with per-slide sound effects.
 - **Overview**: all slides as a grid, drag to reorder, edit durations inline.
-- **Export**: MP4 (H.264), WebM (VP9), GIF, PNG per slide (zip), contact sheet. Sounds are muxed into video exports. All client-side via ffmpeg.wasm.
+- **Export**: MP4 (H.264), WebM (VP8), GIF, PNG per slide (zip), contact sheet. Sounds are muxed into video exports. All client-side via ffmpeg.wasm.
 - **AI polish** (optional): turn a rough doodle into a cleaner sketch in your storyboard's style, or turn a photo or screenshot into a doodle. Providers: Google Gemini, fal.ai, Runware, Replicate (via proxy), or a custom endpoint. See [docs/AI_PROVIDERS.md](docs/AI_PROVIDERS.md).
 - **Sounds** (optional): search and import freesound.org previews with your own key; attribution is kept.
 

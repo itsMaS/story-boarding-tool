@@ -71,26 +71,33 @@ function extensionFor(src: string): string {
   return 'bin';
 }
 
+/**
+ * WebM uses VP8. The libvpx-vp9 encoder in the single-threaded ffmpeg.wasm
+ * core crashes with "memory access out of bounds" after the first few
+ * frames (tested with both realtime and good deadlines), while VP8 encodes
+ * a 720p animatic in a few seconds.
+ */
+function webmVideoArgs(): string[] {
+  return ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '2M', '-qmin', '4', '-qmax', '40'];
+}
+
+const WATCHDOG_MS = 45_000;
+const CRASH_MESSAGE = 'The video encoder crashed or stopped responding (it may have run out of memory). Try a lower resolution or frame rate.';
+
 export async function encodeVideo(
   project: Project,
   frames: SlideFrame[],
   format: VideoFormat,
   opts: VideoOptions,
 ): Promise<Blob> {
+  const debug = typeof localStorage !== 'undefined' && !!localStorage.getItem('sb.debug');
+  const trace = (msg: string) => debug && console.debug('[export]', msg);
+  trace('loading ffmpeg');
   const ffmpeg = await loadFfmpeg((m) => opts.onProgress?.(0, m));
+  trace('ffmpeg loaded');
   const total = frames.reduce((s, f) => s + f.durationSec, 0);
-  const files: string[] = [];
-  const cleanup = async () => {
-    for (const f of files) {
-      try {
-        await ffmpeg.deleteFile(f);
-      } catch {
-        /* ignore */
-      }
-    }
-  };
-
   const onLog = ({ message }: { message: string }) => {
+    if (debug) console.debug('[ffmpeg]', message);
     const m = /time=(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(message);
     if (m) {
       const t = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
@@ -107,14 +114,12 @@ export async function encodeVideo(
       const name = `slide${String(f.index).padStart(4, '0')}.png`;
       const blob = await canvasToBlob(f.canvas);
       await ffmpeg.writeFile(name, new Uint8Array(await blob.arrayBuffer()));
-      files.push(name);
       list += `file '${name}'\nduration ${f.durationSec.toFixed(3)}\n`;
       opts.onProgress?.((0.2 * (f.index + 1)) / frames.length, `Preparing slide ${f.index + 1}/${frames.length}`);
     }
     // concat demuxer quirk: repeat the last file so its duration is honoured.
     list += `file 'slide${String(frames[frames.length - 1].index).padStart(4, '0')}.png'\n`;
     await ffmpeg.writeFile('list.txt', list);
-    files.push('list.txt');
 
     const args: string[] = ['-f', 'concat', '-safe', '0', '-i', 'list.txt'];
     const sounds = opts.includeAudio ? placeSounds(project) : [];
@@ -124,7 +129,6 @@ export async function encodeVideo(
       const { sound, at } = sounds[i];
       const name = `snd${i}.${extensionFor(sound.src)}`;
       await ffmpeg.writeFile(name, await dataUrlToBytes(sound.src));
-      files.push(name);
       args.push('-i', name);
       const delayMs = Math.max(0, Math.round(at * 1000));
       filters.push(`[${i + 1}:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=${sound.volume.toFixed(3)},adelay=${delayMs}|${delayMs}[a${i}]`);
@@ -132,25 +136,58 @@ export async function encodeVideo(
     }
 
     const out = `out.${format}`;
+    // The concat input is variable-rate (one frame per slide). Convert to a
+    // constant frame rate inside the filter graph and trim there: using the
+    // output "-t" option instead drops the trailing frame before it can
+    // trigger duplication, which truncates the last slide.
+    filters.push(`[0:v]fps=${opts.fps},trim=end=${total.toFixed(3)},setpts=PTS-STARTPTS,format=yuv420p[vout]`);
     if (sounds.length) {
-      filters.push(`${mixInputs.join('')}amix=inputs=${sounds.length}:normalize=0:dropout_transition=0,apad[aout]`);
-      args.push('-filter_complex', filters.join(';'), '-map', '0:v', '-map', '[aout]');
+      filters.push(
+        `${mixInputs.join('')}amix=inputs=${sounds.length}:normalize=0:dropout_transition=0,apad,atrim=end=${total.toFixed(3)},asetpts=PTS-STARTPTS[aout]`,
+      );
     }
-    args.push('-r', String(opts.fps), '-t', total.toFixed(3), '-pix_fmt', 'yuv420p');
+    args.push('-filter_complex', filters.join(';'), '-map', '[vout]');
+    if (sounds.length) args.push('-map', '[aout]');
     if (format === 'mp4') {
       args.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-movflags', '+faststart');
       if (sounds.length) args.push('-c:a', 'aac', '-b:a', '160k');
     } else {
-      args.push('-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-crf', '32', '-b:v', '0');
+      args.push(...webmVideoArgs());
       if (sounds.length) args.push('-c:a', 'libopus', '-b:a', '128k');
     }
     args.push('-y', out);
-    files.push(out);
 
     opts.onProgress?.(0.2, 'Encoding…');
     const abort = () => ffmpeg.terminate();
     opts.signal?.addEventListener('abort', abort, { once: true });
-    const code = await ffmpeg.exec(args);
+    trace(`exec ${args.join(' ')}`);
+    // ffmpeg.wasm swallows wasm crashes inside the worker, leaving exec()
+    // pending forever. Treat a long silence from the encoder as a crash.
+    let lastLog = Date.now();
+    const bump = () => (lastLog = Date.now());
+    ffmpeg.on('log', bump);
+    const code = await new Promise<number>((resolve, reject) => {
+      const timer = window.setInterval(() => {
+        if (Date.now() - lastLog > WATCHDOG_MS) {
+          window.clearInterval(timer);
+          ffmpeg.terminate();
+          reject(new Error(CRASH_MESSAGE));
+        }
+      }, 1000);
+      ffmpeg.exec(args).then(
+        (c) => {
+          window.clearInterval(timer);
+          resolve(c);
+        },
+        (err) => {
+          window.clearInterval(timer);
+          // A wasm crash rejects with an empty or non-Error value.
+          reject(err instanceof Error && err.message ? err : new Error(CRASH_MESSAGE));
+        },
+      );
+    });
+    ffmpeg.off('log', bump);
+    trace(`exec done code=${code}`);
     opts.signal?.removeEventListener('abort', abort);
     if (opts.signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     if (code !== 0) throw new Error(`ffmpeg exited with code ${code}`);
@@ -158,7 +195,14 @@ export async function encodeVideo(
     return new Blob([data.slice()], { type: format === 'mp4' ? 'video/mp4' : 'video/webm' });
   } finally {
     ffmpeg.off('log', onLog);
-    if (!opts.signal?.aborted) await cleanup();
-    else ffmpegPromise = null;
+    // A core that already ran one encode can hang on the next (seen with
+    // VP9 after H.264), so every export gets a fresh instance. The wasm is
+    // served from the app bundle and cached, so reloading is cheap.
+    try {
+      ffmpeg.terminate();
+    } catch {
+      /* already gone */
+    }
+    ffmpegPromise = null;
   }
 }

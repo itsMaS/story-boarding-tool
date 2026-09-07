@@ -13,7 +13,7 @@ type Format = 'gif' | 'mp4' | 'webm' | 'png' | 'sheet' | 'current';
 
 const FORMATS: Array<{ id: Format; label: string; hint: string }> = [
   { id: 'mp4', label: 'MP4', hint: 'H.264 video, widest compatibility. Includes sounds.' },
-  { id: 'webm', label: 'WebM', hint: 'VP9 video, smaller files. Includes sounds.' },
+  { id: 'webm', label: 'WebM', hint: 'VP8 video, plays in browsers. Includes sounds.' },
   { id: 'gif', label: 'GIF', hint: 'Animated GIF, one frame per slide. No audio.' },
   { id: 'png', label: 'PNG per slide', hint: 'Zip of one PNG per slide.' },
   { id: 'sheet', label: 'Contact sheet', hint: 'One PNG with all slides in a grid.' },

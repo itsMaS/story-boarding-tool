@@ -12,7 +12,7 @@ Web-based storyboard prototyping tool. Draw on slides, set durations, play back,
 - Vite + TypeScript + React 19 + Zustand + Tailwind v4 (via `@tailwindcss/vite`).
 - Rendering is the plain Canvas 2D API. There is one pure renderer in `src/canvas/render.ts` used by the editor, thumbnails, playback and export, so anything drawn must go through it.
 - Persistence: IndexedDB via `idb` (`src/storage/db.ts`), auto-save, plus explicit save/load of a versioned `.json` project file (`src/model/migrate.ts` holds schema migrations).
-- Export is fully client-side: `gifenc` for GIF, `@ffmpeg/ffmpeg` (single-threaded core, no COOP/COEP needed) for MP4 and WebM, canvas `toBlob` for PNG.
+- Export is fully client-side: `gifenc` for GIF, `@ffmpeg/ffmpeg` (single-threaded core, no COOP/COEP needed) for MP4 (H.264) and WebM (VP8; the VP9 encoder crashes in this wasm build), canvas `toBlob` for PNG. Every video export uses a fresh ffmpeg instance and has a silence watchdog, see `src/export/video.ts`.
 - `vite.config.ts` uses `base: './'` so the same build works locally and under the `/story-boarding-tool/` Pages sub-path.
 
 ## Key design decisions
@@ -32,6 +32,7 @@ npm run dev        # local dev server
 npm run typecheck  # tsc
 npm test           # vitest unit tests
 npm run test:e2e   # playwright smoke test (needs `npm run build` first)
+# In a sandbox with a pre-installed browser: PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium npm run test:e2e
 npm run build      # production build to dist/
 npm run proxy      # optional local CORS proxy for providers that block browser calls
 ```
