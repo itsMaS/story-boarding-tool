@@ -5,7 +5,7 @@ Web-based storyboard prototyping tool. Draw on slides, set durations, play back,
 ## Git rules
 
 - **Always push to `main`.** There is no PR flow for this repo. Commit small, descriptive changes directly on `main` and push after each logical unit of work.
-- GitHub Pages deploys automatically from `main` via `.github/workflows/deploy.yml`. A red build on `main` breaks the live site, so run `npm run typecheck && npm test && npm run build` before pushing.
+- GitHub Pages serves the `gh-pages` branch (Settings → Pages → Deploy from a branch → `gh-pages`, `/ (root)`). `.github/workflows/deploy.yml` builds `main` and pushes `dist/` there on every push; `npm run deploy` does the same from a local checkout when Actions are unavailable. Never edit `gh-pages` by hand. Run `npm run typecheck && npm test && npm run build` before pushing to `main`.
 
 ## Stack
 

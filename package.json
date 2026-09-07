@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "proxy": "node proxy/server.mjs"
+    "proxy": "node proxy/server.mjs",
+    "deploy": "bash scripts/deploy-gh-pages.sh"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

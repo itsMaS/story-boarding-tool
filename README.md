@@ -41,7 +41,12 @@ npm run build
 npm run test:e2e   # playwright smoke test against the built app
 ```
 
-Pushes to `main` deploy to GitHub Pages through `.github/workflows/deploy.yml`. Enable Pages with source "GitHub Actions" in the repository settings the first time.
+## Deploy
+
+The live site is the `gh-pages` branch. In the repository settings choose Pages → Build and deployment → Source **Deploy from a branch**, branch **gh-pages**, folder **/ (root)**.
+
+- Every push to `main` rebuilds and publishes `gh-pages` through `.github/workflows/deploy.yml`.
+- `npm run deploy` builds locally and pushes `gh-pages` directly, for when Actions are unavailable.
 
 ## Project decisions
 
